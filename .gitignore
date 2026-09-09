@@ -1,0 +1,23 @@
+# Local upstream captures can contain anonymous session/CSRF values.
+research/
+.private/
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+.next/
+*.log
+# Authentication exports must never enter source control, wherever saved.
+*.har
+*.har.*
+session.json
+session-*.json
+cookies.txt
+cookies.json
+*.pem
+*.key
+*.p12
+*.pfx
+.DS_Store
+*.tsbuildinfo
