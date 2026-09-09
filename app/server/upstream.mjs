@@ -31,6 +31,9 @@ export class Upstream {
     this.blockedUntil = 0;
     this.session = null;
     this.mtime = 0;
+    this.authState = 'unverified';
+    this.authCheckedAt = null;
+    this.pauseReason = null;
   }
   async loadSession() {
     try {
@@ -51,6 +54,9 @@ export class Upstream {
         this.session = parsed;
         this.mtime = s.mtimeMs;
         this.blockedUntil = 0;
+        this.pauseReason = null;
+        this.authState = 'unverified';
+        this.authCheckedAt = null;
       }
       return this.session;
     } catch {
@@ -85,6 +91,15 @@ export class Upstream {
             'SEARCH_TIMEOUT',
             '전체 조회 제한시간을 초과했습니다.',
           );
+        if (
+          this.blockedUntil > Date.now() &&
+          this.pauseReason === 'AUTH_REQUIRED'
+        )
+          throw new SourceError(
+            'AUTH_REQUIRED',
+            '로그인을 다시 연결해 주세요. 새 연결 뒤에도 거절되면 숲나들e 접근 제한을 확인해야 합니다.',
+            503,
+          );
         if (this.blockedUntil > Date.now())
           throw new SourceError(
             'SOURCE_PAUSED',
@@ -118,6 +133,9 @@ export class Upstream {
             duration_ms: Date.now() - started,
           });
           if ([401, 403].includes(response.status)) {
+            this.authState = 'reconnect';
+            this.authCheckedAt = new Date().toISOString();
+            this.pauseReason = 'AUTH_REQUIRED';
             this.blockedUntil = Date.now() + 60000;
             throw new SourceError(
               'AUTH_REQUIRED',
@@ -126,6 +144,7 @@ export class Upstream {
             );
           }
           if (response.status === 429) {
+            this.pauseReason = 'RATE_LIMITED';
             const header = response.headers.get('retry-after');
             const delay =
               header && /^\d+$/.test(header)
@@ -168,12 +187,19 @@ export class Upstream {
             /"ErrorCode"\s*:\s*"-5"|로그인하시고 다양한|개발자 도구가 감지/.test(
               body,
             )
-          )
+          ) {
+            this.authState = 'reconnect';
+            this.authCheckedAt = new Date().toISOString();
             throw new SourceError(
               'AUTH_REQUIRED',
               '숲나들e 인증 또는 접근 상태를 확인해 주세요.',
               503,
             );
+          }
+          if (this.authState !== 'reconnect') {
+            this.authState = 'verified';
+            this.authCheckedAt = new Date().toISOString();
+          }
           health.last_http_success_at = new Date().toISOString();
           return body;
         } catch (e) {

@@ -213,6 +213,9 @@ test('401 is not retried', async () => {
     (e) => e.code === 'AUTH_REQUIRED',
   );
   assert.equal(calls, 1);
+  assert.equal(u.authState, 'reconnect');
+  await assert.rejects(() => u.post(endpoint, {}), { code: 'AUTH_REQUIRED' });
+  assert.equal(calls, 1);
 });
 test('429 respects retry-after and stops subsequent requests', async () => {
   let calls = 0;

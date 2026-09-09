@@ -7,109 +7,207 @@ import {
   CollapsibleContent,
 } from '@/components/ui/collapsible';
 
+type Status = 'missing' | 'unverified' | 'verified' | 'reconnect';
+type Login = {
+  login_window_open: boolean;
+  login_busy: boolean;
+  login_enabled: boolean;
+  action_token: string;
+};
+const labels: Record<Status, string> = {
+  missing: '처음이라면 본인 계정으로 로그인해 주세요',
+  unverified: '로그인 정보 저장됨 · 빈방 검색으로 연결을 확인해 주세요',
+  verified: '최근 숲나들e 조회 확인됨',
+  reconnect: '로그인 재연결 필요 · 숲나들e에서 조회가 거절됐어요',
+};
 export function SessionSetup() {
-  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
+  const [login, setLogin] = useState<Login | null>(null);
   const [open, setOpen] = useState(false);
-  const [checking, setChecking] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const refresh = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await fetch('/api/health', {
-        cache: 'no-store',
-        signal,
-      });
-      if (!response.ok)
+      const [health, state] = await Promise.all([
+        fetch('/api/health', { cache: 'no-store', signal }),
+        fetch('/api/session/status', { cache: 'no-store', signal }),
+      ]);
+      if (!health.ok || !state.ok)
         throw new Error(
-          '인증 상태를 확인하지 못했습니다. 로컬 실행 창이 켜져 있는지 확인해 주세요.',
+          '연결 상태를 확인하지 못했습니다. 프로그램이 실행 중인지 확인해 주세요.',
         );
-      const data = (await response.json()) as { session_configured?: unknown };
-      if (typeof data.session_configured !== 'boolean')
-        throw new Error('인증 상태 응답을 확인하지 못했습니다.');
-      setConfigured(data.session_configured);
-      setError('');
-      if (!data.session_configured) setOpen(true);
+      const data = (await health.json()) as { auth_status: Status };
+      setStatus(
+        Object.hasOwn(labels, data.auth_status)
+          ? data.auth_status
+          : 'unverified',
+      );
+      setLogin(await state.json());
     } catch (e) {
       if (!signal?.aborted)
         setError(
-          e instanceof Error ? e.message : '인증 상태를 확인하지 못했습니다.',
+          e instanceof Error ? e.message : '연결 상태를 확인하지 못했습니다.',
         );
-    } finally {
-      if (!signal?.aborted) setChecking(false);
     }
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    void Promise.resolve().then(() => {
-      if (!controller.signal.aborted) return refresh(controller.signal);
-    });
-    return () => controller.abort();
+    const update = () => {
+      if (!controller.signal.aborted) void refresh(controller.signal);
+    };
+    void Promise.resolve().then(update);
+    window.addEventListener('focus', update);
+    window.addEventListener('foresttrip-search-finished', update);
+    return () => {
+      controller.abort();
+      window.removeEventListener('focus', update);
+      window.removeEventListener('foresttrip-search-finished', update);
+    };
   }, [refresh]);
+  useEffect(() => {
+    if (!login?.login_window_open) return;
+    const controller = new AbortController();
+    const timer = setInterval(() => {
+      void refresh(controller.signal);
+    }, 5000);
+    return () => {
+      clearInterval(timer);
+      controller.abort();
+    };
+  }, [login?.login_window_open, refresh]);
+  async function action(kind: 'start' | 'finish' | 'cancel') {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const state = await fetch('/api/session/status', { cache: 'no-store' });
+      if (!state.ok) throw new Error('프로그램과 연결하지 못했습니다.');
+      const { action_token } = (await state.json()) as Login;
+      const response = await fetch('/api/session/' + kind, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Local-Login-Token': action_token,
+        },
+        body: '{}',
+      });
+      const result = (await response.json()) as { message?: string };
+      if (!response.ok)
+        throw new Error(result.message || '로그인 연결에 실패했습니다.');
+      if (kind === 'finish') {
+        setNotice(
+          '본인 로그인 정보를 이 컴퓨터에 저장했습니다. 이제 빈방 찾기를 눌러 주세요.',
+        );
+        window.dispatchEvent(new Event('foresttrip-session-changed'));
+      } else if (kind === 'start') {
+        setNotice(
+          '새 Chrome 창에서 로그인한 뒤, 이 화면으로 돌아와 로그인 완료·연결을 눌러 주세요.',
+        );
+      } else
+        setNotice('연결을 취소했습니다. 기존 로그인 정보는 바뀌지 않았습니다.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '로그인 연결에 실패했습니다.');
+    } finally {
+      await refresh();
+      setBusy(false);
+    }
+  }
+  const waiting = login?.login_window_open;
   return (
     <Collapsible className="session-setup" open={open} onOpenChange={setOpen}>
       <div className="session-status">
-        <output>
-          {error
-            ? '이 컴퓨터의 인증 확인 필요'
-            : configured === null
-              ? '이 컴퓨터의 인증 확인 중'
-              : configured
-                ? '이 컴퓨터에 인증 파일이 연결되어 있어요'
-                : '처음 사용한다면 본인 인증을 연결해 주세요'}
+        <output aria-live="polite">
+          {status ? labels[status] : '로그인 상태 확인 중…'}
         </output>
         <CollapsibleTrigger className="session-toggle">
-          {open ? '안내 닫기' : '인증 연결 안내'}
+          {open ? '안내 닫기' : '로그인 도움말'}
         </CollapsibleTrigger>
       </div>
+      <div className="session-actions">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy || !login?.login_enabled || login.login_busy}
+          onClick={() => {
+            void action('start');
+          }}
+        >
+          {busy
+            ? '처리 중…'
+            : waiting
+              ? '로그인 창 보기'
+              : status === 'missing'
+                ? '숲나들e 로그인'
+                : '숲나들e 다시 로그인'}
+        </Button>
+        {waiting && (
+          <>
+            <Button
+              type="button"
+              disabled={busy || login?.login_busy}
+              onClick={() => {
+                void action('finish');
+              }}
+            >
+              로그인 완료·연결
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy || login?.login_busy}
+              onClick={() => {
+                void action('cancel');
+              }}
+            >
+              연결 취소
+            </Button>
+          </>
+        )}
+      </div>
+      {notice && <output className="session-notice">{notice}</output>}
       {error && (
         <p role="alert" className="session-error">
           {error}
         </p>
       )}
+      {login && !login.login_enabled && (
+        <p className="session-error">
+          별도 인증 경로가 설정되어 있습니다. 해당 설정을 해제하고 다시 실행하면
+          로그인 버튼을 사용할 수 있습니다.
+        </p>
+      )}
       <CollapsibleContent className="session-guide">
-        <h2>본인 컴퓨터에서, 본인 계정으로</h2>
+        <h2>본인 계정으로 로그인하면 됩니다</h2>
         <ol>
           <li>
-            <a
-              href="https://www.foresttrip.go.kr/com/login.do"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              숲나들e 공식 사이트에 로그인
-            </a>
-            합니다.
+            <strong>숲나들e 로그인</strong>을 누르면 이 프로그램 전용 Chrome
+            창이 열립니다.
           </li>
           <li>
-            README의 안내에 따라 본인의 로그인 메인 요청 1건을 인증 파일(HAR)로
-            저장합니다. 로그인만으로 자동 연결되지는 않습니다.
+            그 창의 공식 사이트에서 직접 로그인합니다. 본인인증이나 보안문자가
+            나오면 직접 완료해 주세요.
           </li>
           <li>
-            실행 중인 숲 빈방 창을 종료한 뒤, 내려받은 폴더의{' '}
-            <strong>숲빈방 인증 연결</strong> 파일을 실행합니다. Mac은{' '}
-            <code>.command</code>, Windows는 <code>.cmd</code>를 사용해 본인의
-            HAR 파일을 연결합니다.
-          </li>
-          <li>
-            운영체제에 맞는 <strong>숲빈방 실행</strong> 파일을 다시 실행하고
-            날짜·지역·인원으로 검색합니다.
+            이 화면으로 돌아와 <strong>로그인 완료·연결</strong>을 누른 뒤
+            빈방을 검색합니다.
           </li>
         </ol>
         <p>
-          인증은 이 컴퓨터에만 저장됩니다. 파일·쿠키·비밀번호를 다른 사람에게
-          보내지 마세요. 연결 여부는 파일 확인 결과이며, 세션이 만료되었다면
-          다시 로그인하고 연결해야 합니다.
+          평소 사용하던 Chrome 창의 로그인과는 별개입니다. 파일 내보내기나
+          프로그램 재시작은 필요 없습니다. Mac·Windows에 Chrome이 설치되어
+          있어야 합니다.
         </p>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={checking}
-          onClick={() => {
-            setChecking(true);
-            setError('');
-            void refresh();
-          }}
-        >
-          {checking ? '확인 중…' : '연결 상태 다시 확인'}
-        </Button>
+        <p>
+          비밀번호를 이 화면에서 받지 않습니다. 연결에 동의해 버튼을 누르면 공식
+          사이트의 로그인 정보만 본인 컴퓨터에 저장합니다. 연결 창은 완료·취소
+          또는 10분 후 닫힙니다.
+        </p>
+        <p>
+          저장됨은 현재 예약 조회의 성공을 보장하지 않습니다. 공식 사이트가
+          접근을 제한하면 연결이 실패할 수 있으며, 제한을 우회하지 않습니다.
+        </p>
       </CollapsibleContent>
     </Collapsible>
   );

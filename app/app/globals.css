@@ -336,6 +336,20 @@ h1 {
   color: #9c3421;
   margin: 8px 0 0;
 }
+.session-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.session-actions button {
+  min-height: 44px;
+}
+.session-notice {
+  display: block;
+  margin: 12px 0 0;
+  line-height: 1.7;
+}
 .forest-list {
   display: grid;
   gap: 24px;
@@ -391,8 +405,33 @@ h1 {
 }
 .room-action {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 24px;
+}
+.room-pricing {
+  min-width: 0;
+}
+.room-stay-dates {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #52675b;
+}
+.room-stay-dates > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.room-stay-dates dt {
+  min-width: 4em;
+}
+.room-stay-dates dd {
+  margin: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .room-details {
   min-width: 0;

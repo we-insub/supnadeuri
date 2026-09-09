@@ -1,7 +1,22 @@
 import { createServer, request as proxyRequest } from 'node:http';
 import { SearchService } from './search.mjs';
 import { health, log, SourceError } from './errors.mjs';
+import { BrowserLogin } from './browser-login.mjs';
 const service = new SearchService();
+const login = new BrowserLogin({
+  disabled: Boolean(process.env.FORESTTRIP_SESSION_FILE),
+  isSearching: () => service.pending.size > 0,
+  onSaved: async () => {
+    service.cache.clear();
+    service.classes.clear();
+    service.upstream.mtime = 0;
+    await service.upstream.loadSession();
+    health.last_error = null;
+    health.last_success_at = null;
+    health.last_http_success_at = null;
+    log('login_connected');
+  },
+});
 const production = process.env.SERVE_FRONTEND === '1';
 const server = createServer(async (req, res) => {
   const send = (status, data) => {
@@ -64,13 +79,38 @@ const server = createServer(async (req, res) => {
       return send(200, {
         ...health,
         session_configured: authenticated,
+        auth_status: authenticated ? service.upstream.authState : 'missing',
+        auth_checked_at: service.upstream.authCheckedAt,
         active_searches: service.pending.size,
+      });
+    }
+    if (req.url === '/api/session/status' && req.method === 'GET')
+      return send(200, login.status());
+    if (req.url.startsWith('/api/session/') && req.method === 'POST') {
+      login.authorize(req.headers);
+      if (req.headers['content-type'] !== 'application/json')
+        return send(415, { message: '지원하지 않는 요청 형식입니다.' });
+      // Actions take no cookies, passwords, URLs, paths or other user payload.
+      let length = 0;
+      for await (const chunk of req) {
+        length += chunk.length;
+        if (length > 32) return send(413, { message: '요청이 너무 큽니다.' });
+      }
+      await login.action(req.url.slice('/api/session/'.length));
+      return send(200, {
+        ...login.status(),
+        connected: req.url.endsWith('/finish'),
       });
     }
     if (req.url !== '/api/search' || req.method !== 'POST')
       return send(404, { message: '요청한 주소가 없습니다.' });
     if (!req.headers['content-type']?.startsWith('application/json'))
       return send(415, { message: 'JSON 요청만 허용됩니다.' });
+    if (login.active)
+      return send(409, {
+        code: 'LOGIN_IN_PROGRESS',
+        message: '먼저 로그인 완료·연결 또는 연결 취소를 눌러 주세요.',
+      });
     let body = '';
     for await (const chunk of req) {
       body += chunk;
@@ -101,6 +141,10 @@ const server = createServer(async (req, res) => {
     });
   }
 });
+for (const signal of ['SIGINT', 'SIGTERM'])
+  process.on(signal, () => {
+    void login.close().finally(() => server.close(() => process.exit(0)));
+  });
 server.listen(production ? 3000 : 8788, '127.0.0.1', () =>
   log('server_started', {
     url: production ? 'http://127.0.0.1:3000' : 'http://127.0.0.1:8788',

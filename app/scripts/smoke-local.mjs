@@ -26,14 +26,19 @@ const child = spawn(process.execPath, ['scripts/start-local.mjs'], {
 });
 let output = '';
 let spawnError;
-child.on('error', (error) => { spawnError = error; });
-for (const stream of [child.stdout, child.stderr]) {
-  stream.on('data', (chunk) => { output = (output + chunk).slice(-12000); });
-}
-const request = (path, options = {}) => fetch(`http://127.0.0.1:3000${path}`, {
-  ...options,
-  signal: AbortSignal.timeout(5000),
+child.on('error', (error) => {
+  spawnError = error;
 });
+for (const stream of [child.stdout, child.stderr]) {
+  stream.on('data', (chunk) => {
+    output = (output + chunk).slice(-12000);
+  });
+}
+const request = (path, options = {}) =>
+  fetch(`http://127.0.0.1:3000${path}`, {
+    ...options,
+    signal: AbortSignal.timeout(5000),
+  });
 try {
   const deadline = Date.now() + 90000;
   let ready = false;
@@ -46,13 +51,37 @@ try {
         ready = true;
         break;
       }
-    } catch { /* Renderer may still be starting. */ }
+    } catch {
+      /* Renderer may still be starting. */
+    }
     await delay(500);
   }
   assert.ok(ready, 'Rendered search page must become available');
   const health = await request('/api/health');
   assert.equal(health.status, 200);
   assert.equal((await health.json()).session_configured, false);
+  const statusResponse = await request('/api/session/status');
+  assert.equal(statusResponse.status, 200);
+  const login = await statusResponse.json();
+  assert.equal(login.login_window_open, false);
+  assert.equal(login.login_enabled, false);
+  assert.match(login.action_token, /^[a-f0-9]{64}$/);
+  const forbiddenLogin = await request('/api/session/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  assert.equal(forbiddenLogin.status, 403);
+  const disabledLogin = await request('/api/session/start', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      origin: 'http://127.0.0.1:3000',
+      'x-local-login-token': login.action_token,
+    },
+    body: '{}',
+  });
+  assert.equal(disabledLogin.status, 409);
   const blocked = await request('/api/health', {
     headers: { origin: 'https://example.com' },
   });
@@ -63,7 +92,9 @@ try {
     body: '{}',
   });
   assert.equal(invalid.status, 400);
-  console.log('PASS: production page, health, missing authentication, origin guard, input validation');
+  console.log(
+    'PASS: production page, health, missing authentication, origin guard, input validation',
+  );
   console.log('No personal credentials or Foresttrip requests were used.');
 } catch (error) {
   console.error(output);

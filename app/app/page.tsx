@@ -195,8 +195,18 @@ export default function Home() {
         );
     } finally {
       if (requestRef.current === ctrl) setBusy(false);
+      window.dispatchEvent(new Event('foresttrip-search-finished'));
     }
   }
+  useEffect(() => {
+    const clearPrevious = () => {
+      setResult(null);
+      setError('');
+    };
+    window.addEventListener('foresttrip-session-changed', clearPrevious);
+    return () =>
+      window.removeEventListener('foresttrip-session-changed', clearPrevious);
+  }, []);
   const searchRef = useRef(search);
   useEffect(() => {
     searchRef.current = search;
@@ -564,10 +574,30 @@ export default function Home() {
                               )}
                             </div>
                             <div className="room-action">
-                              <strong className="room-price">
-                                {r.price.toLocaleString('ko-KR')}
-                                <small>원</small>
-                              </strong>
+                              <div className="room-pricing">
+                                <strong className="room-price">
+                                  {r.price.toLocaleString('ko-KR')}
+                                  <small>원</small>
+                                </strong>
+                                <dl className="room-stay-dates">
+                                  <div>
+                                    <dt>체크인</dt>
+                                    <dd>
+                                      <time dateTime={r.check_in}>
+                                        {r.check_in}
+                                      </time>
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>체크아웃</dt>
+                                    <dd>
+                                      <time dateTime={r.check_out}>
+                                        {r.check_out}
+                                      </time>
+                                    </dd>
+                                  </div>
+                                </dl>
+                              </div>
                               <a
                                 className="book-link"
                                 href={r.booking_url}
