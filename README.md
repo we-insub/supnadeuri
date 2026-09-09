@@ -149,6 +149,13 @@ npm run test:live
 
 코드와 이 사용법만 공유합니다. `.gitignore`는 프로젝트와 `app/` 양쪽에 있으며 `.private/`, `research/`, HAR·세션·쿠키·환경설정·개인 키를 제외합니다. 이미 추적된 파일은 제외 규칙만으로 제거되지 않으므로 커밋 전 `git status --short`, `git diff --cached --name-only`를 확인하세요. `git add -f`로 인증 파일을 강제 추가하지 않습니다.
 
-[GitHub 저장소: we-insub/supnadeuri](https://github.com/we-insub/supnadeuri)에 소스와 사용법을 업로드했습니다. 현재 **비공개 저장소**이므로 저장소 접근 권한이 있는 사용자만 내려받을 수 있습니다. 인증 파일은 업로드하지 않았습니다. 공용 웹사이트 배포, 계정 공유, 자체 회원가입, 취소 알림, 타 플랫폼, AI 추천은 이번 버전에 포함하지 않습니다.
+[GitHub 저장소: we-insub/supnadeuri](https://github.com/we-insub/supnadeuri)에 소스와 사용법을 공개했습니다. 누구나 확인하고 내려받을 수 있으며, 인증 파일은 업로드하지 않았습니다. 공용 웹사이트 배포, 계정 공유, 자체 회원가입, 취소 알림, 타 플랫폼, AI 추천은 이번 버전에 포함하지 않습니다.
 
 [공식 로그인](https://www.foresttrip.go.kr/com/login.do)으로 사용자가 받은 인증을 활용하는 로컬 도구입니다. 실제 수집 가능 여부는 원본 사이트 정책과 세션 상태에 따라 달라집니다.
+
+## 문의
+
+사용 중 궁금한 점이나 개선 의견이 있다면 아래 채널로 남겨 주세요.
+
+- [유튜브 · @Mato_coder](https://www.youtube.com/@Mato_coder)
+- [Threads · @mato_kor](https://www.threads.com/@mato_kor?hl=ko)
