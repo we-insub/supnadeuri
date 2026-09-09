@@ -28,4 +28,5 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run build
+      - run: node scripts/smoke-local.mjs
       # No user credentials and no live Foresttrip requests in CI.
